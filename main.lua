@@ -1,6 +1,6 @@
 ---@class SpriteCodec
 local SCMod = {}
-SCMod.Version = '2.9.0'
+SCMod.Version = '2.9.1'
 local path=require('debug').getinfo(1,'S').source:match('^@(.*)main.lua$')
 -- local Dots = {}
 local CacheIndex = {}
