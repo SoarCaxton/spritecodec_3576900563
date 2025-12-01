@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+    <name>SpriteCodec</name>
+    <directory>spritecodec</directory>
+    <id>3576900563</id>
+    <description>
+[h1]SpriteCodec - 图像API[/h1]
+
+[h2]模组变量[/h2]
+[u]调用方式：SpriteCodec.变量名[/u]
+[olist]
+[*][h3]number Version[/h3]
+表示当前版本号。
+
+[*][h3]string EmptyCode[/h3]
+表示一个空白图像的压缩编码。
+
+[*][h3]string RawEmptyCode[/h3]
+表示一个空白图像的未经压缩的编码。
+[/olist]
+
+[h2]模组函数[/h2]
+[u]调用方式：SpriteCodec[b]:[/b]函数名(参数)[/u]
+[olist]
+[*][h3]string EncodeSpriteLayer(sprite,layer,arm=64,leg=64,rawOutput=false)[/h3]
+将给出的Sprite对象的第layer层(当前帧)编码，并返回图像的压缩编码。
+可选参数：
+arm和leg分别指示贴图中心点到边界的最大水平和垂直距离。
+rawOutput若为true则返回未经压缩的编码。
+
+[*][h3]string EncodeSprite(sprite,arm=64,leg=64,rawOutput=false)[/h3]
+将给出的Sprite对象(当前帧)编码，并返回压缩编码。
+可选参数：
+arm和leg分别指示贴图中心点到边界的最大水平和垂直距离。
+rawOutput若为true则返回未经压缩的编码。
+
+[*][h3]table EncodeSpriteAnimation(sprite,animation=DefaultAnimation,arm=64,leg=64,maxframe=AllFrames,specificLayer=AllLayers,rawOutput=false)[/h3]
+将给出的Sprite对象的指定动画编码，并返回一个包含每一帧压缩编码的表。
+表的键是该动画的帧，值是该帧图像的压缩编码。
+可选参数：
+animation指示要编码的动画，若未提供则使用默认动画。
+arm和leg分别指示贴图中心点到边界的最大水平和垂直距离。
+maxframe指示最多编码到几号帧，若未提供则默认编码所有帧。
+specificLayer若提供则只编码该层，否则编码所有层并混合。
+rawOutput若为true则每层均保存未经压缩的编码。
+
+[*][h3]string EncodePNG(path2png,width=128,height=128,rawOutput=false)[/h3]
+将给出的png文件编码，并返回图像的压缩编码。
+可选参数：
+width和height指示出图像的最大尺寸，最大尺寸为128x128。
+rawOutput若为true则返回未经压缩的编码。
+
+[*][h3]string QRCode(content,rawOutput=false)[/h3]
+将给出的字符串content编码为二维码图像，返回二维码的压缩编码。
+可选参数：
+rawOutput若为true则返回未经压缩的编码。
+
+[*][h3]void RenderCode(code,renderPos,filter=nil,rawInput=false)[/h3]
+在renderPos位置根据图像的压缩编码渲染图像。
+可选参数：
+filter若提供则应为一个函数，接受多个参数(x,y,r,g,b,a)并依次返回返回修改后的参数(px,py,pr,pg,pb,pa)，表示在渲染时对每个点的滤镜操作。
+rawInput若为true则表示code为未经压缩的编码。
+
+[*][h3]Vector GetCodeRange(code)[/h3]
+根据图像的编码返回图像中心点到边界的最远距离。
+输入的code既可以是压缩编码也可以是未经压缩的编码。
+
+[*][h3]number GetCodePixelNum(code,rawInput=false)[/h3]
+根据图像的编码返回图像中非透明像素的数量。
+可选参数：
+rawInput若为true则表示code为未经压缩的编码。
+
+[*][h3]Vector GetCodeCenter(code,rawInput=false)[/h3]
+根据图像的编码计算并返回图像的中心点坐标。
+可选参数：
+rawInput若为true则表示code为未经压缩的编码。
+
+[*][h3]string CenterizeCode(code,rawInput=false,rawOutput=false)[/h3]
+根据图像的编码将图像中心移动至坐标零点并返回新的编码。
+可选参数：
+rawInput若为true则表示code为未经压缩的编码。
+rawOutput若为true则返回未经压缩的编码。
+
+[*][h3]string ReshapeCode(code,modifier=nil,rawInput=false,rawOutput=false)[/h3]
+根据图像的压缩编码将图像进行逐点处理，返回处理后的压缩编码。
+可选参数：
+modifier若提供则应为一个函数，接受多个参数(x,y,r,g,b,a)并依次返回返回修改后的参数(px,py,pr,pg,pb,pa)，表示对图像每个点的操作。
+rawInput若为true则表示code为未经压缩的编码。
+rawOutput若为true则返回未经压缩的编码。
+
+[*][h3]string MixCode(code1,code2,mode=nil,rawInput=false,rawOutput=false)[/h3]
+根据压缩编码，将两个编码后的图像进行逐点混合，返回混合后的压缩编码。
+可选参数：
+mode若提供则应为一个函数，接受多个参数(r1,g1,b1,a1,r2,g2,b2,a2)并依次返回返回混合后的参数(r,g,b,a)。
+若mode未提供则使用默认的混合模式Dot1UnderDot2(code1渲染在code2下方)。
+rawInput若为true则表示code1和code2均为未经压缩的编码。
+rawOutput若为true则返回未经压缩的编码。
+
+[*][h3]string Share(code)[/h3]
+将编码转换为可视字符串。
+
+[*][h3]string Receive(sharedCode)[/h3]
+将可视字符串转换为编码。
+[/olist]
+
+[h2]只读迭代器[/h2]
+[olist]
+[*][h3]CodeIter(code,rawInput)-&gt;x,y,r,g,b,a[/h3]
+调用方式：for x,y,r,g,b,a in SpriteCodec:CodeIter(code) do ... end
+返回一个只读迭代器，用于遍历图像的所有像素点。
+可选参数：
+rawInput若为true则表示code为未经压缩的编码。
+
+[*][h3]MemberIter()-&gt;key,value[/h3]
+调用方式：for k,v in SpriteCodec:MemberIter() do ... end
+或：for k,v in pairs(SpriteCodec) do ... end
+或：for k,v in ipairs(SpriteCodec) do ... end
+返回一个只读迭代器，用于遍历SpriteCodec模组的所有成员。
+[/olist]
+
+[h2]可写迭代器[/h2]
+[olist]
+[*][h3]FrameIter(codes,endless=false,rawInput=false,rawOutput=false)-&gt;frame,code[/h3]
+调用方式：for frame,code in SpriteCodec:FrameIter(codes,true) do ... end
+返回一个可写迭代器，用于遍历图像编码表codes中的每一帧。
+可选参数：
+endless若为true则在遍历到最后一帧后从头开始重新遍历。
+rawInput若为true则表示codes中的编码均为未经压缩的编码。
+rawOutput若为true则每次返回的编码均为未经压缩的编码。
+[/olist]
+
+</description>
+    <version>2.8.4</version>
+    <visibility>Public</visibility>
+    <tag id="Lua"/>
+    <tag id="Graphics"/>
+</metadata>

@@ -1,0 +1,28 @@
+---@meta SpriteCodec 模组的EmmyLua注释文件
+
+---@alias Sprite userdata 表示一个图像精灵对象
+---@alias Vector userdata 表示一个二维向量对象
+
+---@class SpriteCodec
+---@field Version string 当前模组的版本号
+---@field EmptyCode string 压缩后的空白图像编码，可用作默认空图像
+---@field RawEmptyCode string 未压缩的空白图像编码，用于表示一个不包含任何像素的空图像的原始数据
+---@field EncodeSpriteLayer fun(self:SpriteCodec, sprite:Sprite, layer:number, arm?:number, leg?:number, rawOutput?:boolean):code:string 将指定图层的Sprite(当前帧)编码为压缩后的字符串表示
+---@field EncodeSprite fun(self:SpriteCodec, sprite:Sprite, arm?:number, leg?:number, rawOutput?:boolean):code:string 将Sprite的所有图层编码(当前帧)为压缩后的字符串表示
+---@field EncodeSpriteAnimation fun(self:SpriteCodec, sprite:Sprite, animation?:string, arm?:number, leg?:number,maxframe?:number,specificLayer?:number,rawOutput?:boolean):codes:table 将指定图层的Sprite动画逐帧编码为压缩后的字符串表示，并依次存储在表中返回
+---@field EncodePNG fun(self:SpriteCodec, path2png:string, width?:number, height?:number, rawOutput?:boolean):code:string 将指定路径的PNG图像编码为压缩后的字符串表示
+---@field QRCode fun(self:SpriteCodec, content:string, rawOutput?:boolean):qrcode:string 将字符串内容编码为二维码的压缩字符串表示
+---@field RenderCode fun(self:SpriteCodec, code:string, renderPos:Vector, filter?:fun(x:number, y:number, r:number, g:number, b:number, a:number):(x_new:number,y_new:number, r_new:number, g_new:number, b_new:number, a_new:number), rawInput?:boolean) 在指定位置渲染编码表示的图像
+---@field GetCodeRange fun(self:SpriteCodec, code:string): range:Vector 获取编码表示的图像范围信息
+---@field GetCodePixelNum fun(self:SpriteCodec, code:string, rawInput?:boolean): pixelNum:number 获取编码表示图像中的非透明像素数量
+---@field GetCodeCenter fun(self:SpriteCodec, code:string, rawInput?:boolean): center:Vector 计算并返回编码表示图像的中心点
+---@field CenterizeCode fun(self:SpriteCodec, code:string, rawInput?:boolean, rawOutput?:boolean):code:string 将编码表示的图像中心移动至坐标零点并返回新的编码表示
+---@field ReshapeCode fun(self:SpriteCodec, code:string, modifier?:fun(x:number, y:number, r:number, g:number, b:number, a:number):(x_new:number,y_new:number, r_new:number, g_new:number, b_new:number, a_new:number), rawInput?:boolean, rawOutput?:boolean):code:string 对编码表示进行形状修改并返回新的编码表示
+---@field MixCode fun(self:SpriteCodec, code1:string, code2:string, mode?:fun(r1:number, g1:number, b1:number, a1:number, r2:number, g2:number, b2:number, a2:number):(r_new:number, g_new:number, b_new:number, a_new:number), rawInput?:boolean, rawOutput?:boolean):code:string 将两个编码表示进行混合并返回新的编码表示
+---@field Share fun(self:SpriteCodec, code:string):base64code:string 将编码表示转换为可读的Base64字符串
+---@field Receive fun(self:SpriteCodec, sharecode:string):code:string 将Base64字符串转换回编码表示
+---@field __pairs fun(self:SpriteCodec):fun():(key:string, value:any) 迭代器函数，用于遍历SpriteCodec模块的所有成员变量和方法
+---@field __ipairs fun(self:SpriteCodec):fun():(key:string, value:any) 迭代器函数，用于遍历SpriteCodec模块的所有成员变量和方法
+---@field MemberIter fun(self:SpriteCodec):fun():(key:string, value:any) 迭代器函数，用于遍历SpriteCodec模块的所有成员变量和方法
+---@field CodeIter fun(self:SpriteCodec, code:string, rawInput?:boolean):fun():(x:number, y:number, r:number, g:number, b:number, a:number) 迭代器函数，用于遍历编码表示中的所有像素及其属性
+---@field FrameIter fun(self:SpriteCodec, codes:table, endless?:boolean, rawInput?:boolean, rawOutput?:boolean):fun():(frameIndex:number, code:string) 迭代器函数，用于遍历编码动画表的每一帧及其编码表示
