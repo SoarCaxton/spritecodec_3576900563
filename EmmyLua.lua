@@ -21,6 +21,8 @@
 ---@field MixCode fun(self:SpriteCodec, code1:string, code2:string, mode?:fun(r1:number, g1:number, b1:number, a1:number, r2:number, g2:number, b2:number, a2:number):(r_new:number, g_new:number, b_new:number, a_new:number), rawInput?:boolean, rawOutput?:boolean):code:string 将两个编码表示进行混合并返回新的编码表示
 ---@field Share fun(self:SpriteCodec, code:string):base64code:string 将编码表示转换为可读的Base64字符串
 ---@field Receive fun(self:SpriteCodec, sharecode:string):code:string 将Base64字符串转换回编码表示
+---@field SaveAsPNG fun(self:SpriteCodec, code:string, rawInput?:boolean) 将编码表示保存为PNG图像文件
+---@field SaveAsAnm2 fun(self:SpriteCodec, codes:table, animationName?:string, rawInput?:boolean) 将编码动画表保存为Anm2动画文件
 ---@field __pairs fun(self:SpriteCodec):fun():(key:string, value:any) 迭代器函数，用于遍历SpriteCodec模块的所有成员变量和方法
 ---@field __ipairs fun(self:SpriteCodec):fun():(key:string, value:any) 迭代器函数，用于遍历SpriteCodec模块的所有成员变量和方法
 ---@field MemberIter fun(self:SpriteCodec):fun():(key:string, value:any) 迭代器函数，用于遍历SpriteCodec模块的所有成员变量和方法

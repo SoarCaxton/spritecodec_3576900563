@@ -1,6 +1,6 @@
 ---@class SpriteCodec
 local SCMod = {}
-SCMod.Version = '2.8.4'
+SCMod.Version = '2.9.0'
 local path=require('debug').getinfo(1,'S').source:match('^@(.*)main.lua$')
 -- local Dots = {}
 local CacheIndex = {}
@@ -299,7 +299,7 @@ function SCMod:EncodeSpriteLayer(sprite, layer, arm, leg, rawOutput)
     local tmp = {}
     arm = math.ceil(arm or 64)
     leg = math.ceil(leg or 64)
-    local left, right, top, bottom = arm, -arm, leg, -leg
+    local left, right, top, bottom = math.huge, -math.huge, math.huge, -math.huge
     for x = -arm, arm do
         tmp[x] = {}
         for y = -leg, leg do
@@ -466,8 +466,8 @@ function SCMod:Receive(sharecode)
 end
 
 ---@param path2png string PNG图像的文件路径
----@param width number|nil 图像的宽度，默认128
----@param height number|nil 图像的高度，默认128
+---@param width number|nil 图像的宽度，默认(最大)128
+---@param height number|nil 图像的高度，默认(最大)128
 ---@param rawOutput boolean|nil 是否返回未压缩的原始编码，默认false
 ---@return string --code: 将指定路径的PNG图像编码为压缩后的字符串表示
 ---@nodiscard
@@ -477,22 +477,29 @@ function SCMod:EncodePNG(path2png, width, height, rawOutput)
     end
     width = math.min(128, math.ceil(width or 128))
     height = math.min(128, math.ceil(height or 128))
-    local arm, leg = math.ceil(width/2), math.ceil(height/2)
 
-    local png=Sprite()
+    -- 保证 2*arm+1 == width 且 2*leg+1 == height
+    local arm = math.floor((width - 1) / 2)
+    local leg = math.floor((height - 1) / 2)
+
+    local png = Sprite()
     png:Load(path..'/gfx/transparent.anm2')
-    png:ReplaceSpritesheet(0,path2png)
+    png:ReplaceSpritesheet(0, path2png)
     png:LoadGraphics()
-    png:SetFrame('transparent',0)
+    png:SetFrame('transparent', 0)
 
-    local left, right, top, bottom = arm, -arm, leg, -leg
+    local left, right, top, bottom = math.huge, -math.huge, math.huge, -math.huge
     local tmp = {}
-    for x = -arm, width - arm - 1 do
+
+    -- 遍历严格对齐到声明范围 [-arm..arm] × [-leg..leg]
+    for x = -arm, arm do
         tmp[x] = {}
-        for y = -leg, height - leg - 1 do
-            local k = png:GetTexel(Vector(x + arm, y + leg), Vector.Zero, 1, 0)
+        for y = -leg, leg do
+            local sx = x + arm          -- 0 .. width-1
+            local sy = y + leg          -- 0 .. height-1
+            local k = png:GetTexel(Vector(sx, sy), Vector.Zero, 1, 0)
             if k.Alpha > 0 then
-                tmp[x][y] = {r=k.Red, g=k.Green, b=k.Blue, a=k.Alpha}
+                tmp[x][y] = { r = k.Red, g = k.Green, b = k.Blue, a = k.Alpha }
                 if x < left then left = x end
                 if x > right then right = x end
                 if y < top then top = y end
@@ -500,12 +507,12 @@ function SCMod:EncodePNG(path2png, width, height, rawOutput)
             end
         end
     end
-    if left > right then
-        left, right = 0, 0
-    end
-    if top > bottom then
-        top, bottom = 0, 0
-    end
+
+    -- 无像素时安全回退
+    if left > right then left, right = 0, 0 end
+    if top > bottom then top, bottom = 0, 0 end
+
+    -- 以实际像素边界收紧范围
     arm = math.max(math.abs(left), math.abs(right))
     leg = math.max(math.abs(top), math.abs(bottom))
 
@@ -514,7 +521,6 @@ function SCMod:EncodePNG(path2png, width, height, rawOutput)
         return table.concat(generatedCode)
     end
     return Compress(table.unpack(generatedCode))
-
 end
 
 ---@param code string 编码表示的图像数据
@@ -547,7 +553,7 @@ function SCMod:ReshapeCode(code, modifier, rawInput, rawOutput)
     code = code:sub(5 + mapSize)
     local modifierChecked = false
     if modifier then
-        local left, right, top, bottom = arm, -arm, leg, -leg
+        local left, right, top, bottom = math.huge, -math.huge, math.huge, -math.huge
         local tmp={}
         local transparentDot = EncodeDot(0,0,0,0)
         for c=1, mapSize do
@@ -1072,6 +1078,62 @@ function SCMod:FrameIter(codes,endless,rawInput,rawOutput)
         end
         return currentFrame,code
     end
+end
+
+local Mod4SavingData = RegisterMod('SpriteCodec_DataSaver', 1)
+---@param code string 编码表示的图像数据
+---@param rawInput boolean|nil 表示输入的编码是否为未压缩格式，默认false
+function SCMod:SaveAsPNG(code, rawInput)
+    if type(code) ~= 'string' then
+        error('Code isn\'t a string', 2)
+    end
+    if rawInput then
+        local header, map, dots = code:sub(1,4)
+        local success, arm, leg = pcall(string.unpack, '>HH', header)
+        if not success then
+            error('Invalid code', 2)
+        end
+        local mapSize = math.ceil((2 * arm + 1) * (2 * leg + 1) / 8)
+        map = code:sub(5, 4 + mapSize)
+        dots = code:sub(5 + mapSize)
+        code = Compress(header, map, dots)
+    end
+    code = self:Share(code)
+    Mod4SavingData:SaveData('png:'..code)
+end
+
+---@param codes table 包含每一帧编码表示的表
+---@param animationName string|nil 动画名称，默认使用'spritecodec_saved_animation'
+---@param rawInput boolean|nil 表示输入的编码是否为未压缩格式，默认false
+function SCMod:SaveAsAnm2(codes, animationName, rawInput)
+    if type(codes) ~= 'table' then
+        error('Codes must be a table', 2)
+    end
+    animationName = animationName or 'spritecodec_saved_animation'
+
+    local processed = {}
+
+    for i, code in ipairs(codes) do
+        if type(code) ~= 'string' then
+            error('Frame '..i..' code isn\'t a string', 2)
+        end
+        if rawInput then
+            local header = code:sub(1,4)
+            local success, arm, leg = pcall(string.unpack, '>HH', header)
+            if not success then
+                error('Invalid code at frame '..i, 2)
+            end
+            local mapSize = math.ceil((2 * arm + 1) * (2 * leg + 1) / 8)
+            local map = code:sub(5, 4 + mapSize)
+            local dots = code:sub(5 + mapSize)
+            code = Compress(header, map, dots)
+        end
+        code = self:Share(code)
+        table.insert(processed, code)
+    end
+
+    local finalData = 'anm2:'..animationName..':'..table.concat(processed, '|')
+    Mod4SavingData:SaveData(finalData)
 end
 ----------------------------------------------------------------------------------------
 SpriteCodec = {}

@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SpriteCodec - 读取器</title>
+<style>
+  :root{--brand:#4a90e2;--ok:#2ecc71;--warn:#f39c12;--bg:#f5f7fa}
+  body{font-family:"Segoe UI",Arial,sans-serif;margin:0;background:var(--bg);color:#333}
+  header{background:var(--brand);color:#fff;padding:16px;text-align:center}
+  .container{max-width:1200px;margin:20px auto;padding:0 16px}
+  .controls{display:flex;gap:12px;align-items:center;margin-bottom:20px;flex-wrap:wrap}
+  input[type=file]{padding:6px;border:1px solid #ccc;border-radius:6px;background:#fff}
+  button{padding:8px 14px;border:none;border-radius:6px;background:var(--brand);color:#fff;cursor:pointer}
+  button:hover{filter:brightness(0.95)}
+  .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
+  .card{background:#fff;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.08);padding:12px;display:flex;flex-direction:column;align-items:stretch}
+  .card h4{margin:0 0 8px;font-size:14px;color:#4a4a4a;word-break:break-all}
+  .kind{font-size:12px;color:#888;margin-bottom:6px}
+  .canvas-wrap{display:flex;justify-content:center;align-items:center;overflow:auto;background:#fafafa;border:1px solid #eee;border-radius:6px;min-height:120px}
+  canvas{display:block}
+  .meta{font-size:12px;color:#666;margin-top:6px}
+  .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .actions .save{background:var(--ok)}
+  .actions .play{background:var(--warn)}
+  .error{color:#c0392b;font-size:12px;margin-top:6px}
+</style>
+</head>
+<body>
+<header><h2>SpriteCodec - PNG读取器</h2></header>
+<div class="container">
+  <div class="controls">
+    <label>选择目录：</label>
+    <input id="dirInput" type="file" webkitdirectory directory multiple>
+    <button id="btnClear">清除</button>
+  </div>
+  <div id="gallery" class="gallery"></div>
+</div>
+
+<script>
+// ===== 基础解码工具 =====
+function readU16BE(a,o){return (a[o]<<8)|a[o+1];}
+function readU32BE(a,o){return (a[o]*0x1000000)+((a[o+1]<<16)|(a[o+2]<<8)|a[o+3]);}
+function rleDecompress(u8){const out=[];for(let i=0;i+1<u8.length;i+=2){const c=u8[i],v=u8[i+1];for(let k=0;k<c;k++)out.push(v);}return new Uint8Array(out);}
+function predictiveDecompress(u8){
+  const out=new Uint8Array(u8.length);
+  let pr=0,pg=0,pb=0,pa=0;
+  for(let i=0;i<u8.length;i+=4){
+    const dr=u8[i]||0,dg=u8[i+1]||0,db=u8[i+2]||0,da=u8[i+3]||0;
+    const r=(pr+dr)&0xFF,g=(pg+dg)&0xFF,b=(pb+db)&0xFF,a=(pa+da)&0xFF;
+    out[i]=r;out[i+1]=g;out[i+2]=b;out[i+3]=a;
+    pr=r;pg=g;pb=b;pa=a;
+  }
+  return out;
+}
+function decodeCompressedBytes(raw){
+  if(!(raw instanceof Uint8Array) || raw.length<8) throw new Error('数据无效');
+  const arm=readU16BE(raw,0),leg=readU16BE(raw,2),mapLen=readU32BE(raw,4);
+  if(8+mapLen>raw.length) throw new Error('mapLen 超出长度');
+  const map=rleDecompress(raw.slice(8,8+mapLen));
+  const code=predictiveDecompress(raw.slice(8+mapLen));
+  const width=2*arm+1,height=2*leg+1,mapSize=Math.ceil((width*height)/8);
+  if(map.length<mapSize) throw new Error('map 解码后长度不足');
+  const img=new Uint8ClampedArray(width*height*4); let off=0;
+  for(let c=0;c<mapSize;c++){
+    let byte=map[c];
+    for(let bit=0;bit<8;bit++){
+      const idx=c*8+bit; if(idx>=width*height)break;
+      if((byte&1)!==0){
+        if(off+4>code.length) throw new Error('像素数据不足');
+        const r=code[off],g=code[off+1],b=code[off+2],a=code[off+3]; off+=4;
+        const x=(idx%width), y=Math.floor(idx/width);
+        const pi=(y*width + x)*4;
+        img[pi]=r; img[pi+1]=g; img[pi+2]=b; img[pi+3]=a;
+      }
+      byte>>=1;
+    }
+  }
+  return {width,height,img};
+}
+
+// Base64 -> Uint8Array
+function b64ToU8(s){s=s.trim().replace(/\s+/g,''); return Uint8Array.from(atob(s),c=>c.charCodeAt(0));}
+
+// 读取 dat（优先文本）
+function readDat(file){
+  return new Promise(async (resolve,reject)=>{
+    try{
+      const txt = await file.text();
+      resolve({kind:'text',data:txt});
+      return;
+    }catch(e){}
+    const fr=new FileReader();
+    fr.onload=()=>resolve({kind:'bin',data:new Uint8Array(fr.result)});
+    fr.onerror=()=>reject(new Error('读取失败'));
+    fr.readAsArrayBuffer(file);
+  });
+}
+
+// 解析 dat 文本前缀
+function parseDatContent(text){
+  if(text.startsWith('png:')){
+    return {type:'png', code:text.slice(4)};
+  }
+  if(text.startsWith('anm2:')){
+    const payload = text.slice(5);
+    const firstColon = payload.indexOf(':');
+    if(firstColon<0) throw new Error('anm2 格式错误');
+    const name = payload.slice(0, firstColon);
+    const framesStr = payload.slice(firstColon+1);
+    const frames = framesStr.length ? framesStr.split('|') : [];
+    return {type:'anm2', name, frames};
+  }
+  throw new Error('未知格式');
+}
+
+// 生成 anm2 XML（单 spritesheet，共用 layer）
+// 修改点：Info Version=1，所有 Frame Delay 使用最小值 1
+function generateAnm2XML(name, spritesheetPath, framesMeta){
+  // framesMeta: [{xcrop,ycrop,width,height,xpivot,ypivot,delay,visible}, ...]
+  const header =
+`<AnimatedActor>
+  <Info CreatedBy="SpriteCodec" CreatedOn="" Fps="30" Version="1" />
+  <Content>
+    <Spritesheets>
+      <Spritesheet Id="0" Path="${spritesheetPath}" />
+    </Spritesheets>
+    <Layers>
+      <Layer Id="0" Name="Layer0" SpritesheetId="0" />
+    </Layers>
+    <Nulls/>
+    <Events/>
+  </Content>
+  <Animations DefaultAnimation="${name}">`;
+  const animOpen =
+`    <Animation Name="${name}" FrameNum="${framesMeta.length}" Loop="true">
+      <RootAnimation>
+        <Frame XPosition="0" YPosition="0" Delay="1" Visible="true" XScale="100" YScale="100" RedTint="255" GreenTint="255" BlueTint="255" AlphaTint="255" RedOffset="0" GreenOffset="0" BlueOffset="0" Rotation="0" Interpolated="false" />
+      </RootAnimation>
+      <LayerAnimations>
+        <LayerAnimation LayerId="0" Visible="true">`;
+  const framesXML = framesMeta.map(m=>{
+    // 强制 Delay 最小值为 1
+    const delay = Math.max(1, m.delay || 1);
+    return `          <Frame XPosition="0" YPosition="0" XPivot="${m.xpivot}" YPivot="${m.ypivot}" XCrop="${m.xcrop}" YCrop="${m.ycrop}" Width="${m.width}" Height="${m.height}" XScale="100" YScale="100" Delay="${delay}" Visible="${m.visible? 'true':'true'}" RedTint="255" GreenTint="255" BlueTint="255" AlphaTint="255" RedOffset="0" GreenOffset="0" BlueOffset="0" Rotation="0" Interpolated="false" />`;
+  }).join('\n');
+  const animClose =
+`        </LayerAnimation>
+      </LayerAnimations>
+      <NullAnimations/>
+      <Triggers/>
+    </Animation>`;
+  const footer =
+`  </Animations>
+</AnimatedActor>`;
+  return [header, animOpen, framesXML, animClose, footer].join('\n');
+}
+
+// 播放逐帧动画
+function playAnimation(canvas, frames, fps=8){
+  const ctx = canvas.getContext('2d');
+  if(frames.length===0) return ()=>{};
+  let i=0;
+  canvas.width = frames[0].width;
+  canvas.height = frames[0].height;
+  const interval = Math.max(1, Math.floor(1000/Math.max(1,fps)));
+  const timer = setInterval(()=>{
+    const f = frames[i];
+    ctx.putImageData(new ImageData(f.img, f.width, f.height), 0, 0);
+    i = (i+1)%frames.length;
+  }, interval);
+  return ()=>clearInterval(timer);
+}
+
+// ===== UI 逻辑 =====
+const dirInput=document.getElementById('dirInput');
+const gallery=document.getElementById('gallery');
+const btnClear=document.getElementById('btnClear');
+btnClear.addEventListener('click',()=>{gallery.innerHTML='';dirInput.value='';});
+
+dirInput.addEventListener('change', async e=>{
+  gallery.innerHTML='';
+  const files=[...e.target.files].filter(f=>f.name.toLowerCase().endsWith('.dat'));
+  if(!files.length){gallery.innerHTML='<p style="color:#999;text-align:center">目录中没有 .dat 文件</p>';return;}
+  for(const f of files){
+    const card=document.createElement('div'); card.className='card';
+    const title=document.createElement('h4'); title.textContent=f.name;
+    const kind=document.createElement('div'); kind.className='kind';
+    const wrap=document.createElement('div'); wrap.className='canvas-wrap';
+    const canvas=document.createElement('canvas');
+    wrap.appendChild(canvas);
+    const meta=document.createElement('div'); meta.className='meta';
+    const actions=document.createElement('div'); actions.className='actions';
+    card.append(title,kind,wrap,meta,actions);
+    gallery.appendChild(card);
+
+    try{
+      const {kind:dkind, data} = await readDat(f);
+      const text = (dkind==='text') ? data : new TextDecoder().decode(data);
+      const parsed = parseDatContent(text);
+
+      if(parsed.type==='png'){
+        kind.textContent = '类型: PNG';
+        const raw = b64ToU8(parsed.code);
+        const decoded = decodeCompressedBytes(raw);
+        canvas.width = decoded.width; canvas.height = decoded.height;
+        canvas.getContext('2d').putImageData(new ImageData(decoded.img, decoded.width, decoded.height), 0, 0);
+        meta.textContent = `尺寸: ${decoded.width} × ${decoded.height}`;
+
+        const saveBtn=document.createElement('button'); saveBtn.className='save'; saveBtn.textContent='保存 PNG';
+        saveBtn.onclick=()=>{
+          canvas.toBlob(b=>{
+            const a=document.createElement('a');
+            a.href=URL.createObjectURL(b);
+            a.download=f.name.replace(/\.dat$/i,'.png');
+            a.click();
+            setTimeout(()=>URL.revokeObjectURL(a.href),60000);
+          },'image/png');
+        };
+        actions.appendChild(saveBtn);
+      }
+
+      if(parsed.type==='anm2'){
+        kind.textContent = `类型: ANM2（动画名: ${parsed.name}）`;
+        // 解码每帧并保留原始尺寸
+        const framesDecoded=[];
+        for(let i=0;i<parsed.frames.length;i++){
+          const codeB64 = parsed.frames[i];
+          const raw = b64ToU8(codeB64);
+          const decoded = decodeCompressedBytes(raw);
+          framesDecoded.push(decoded);
+        }
+        // 播放控制
+        let stop=null;
+        const playBtn=document.createElement('button'); playBtn.className='play'; playBtn.textContent='播放/停止';
+        playBtn.onclick=()=>{
+          if(stop){ stop(); stop=null; return; }
+          stop = playAnimation(canvas, framesDecoded, 10);
+        };
+        actions.appendChild(playBtn);
+
+        // 保存 anm2：合并为单 spritesheet，并生成 framesMeta
+        const saveAnm2Btn=document.createElement('button'); saveAnm2Btn.className='save'; saveAnm2Btn.textContent='保存 anm2';
+        saveAnm2Btn.onclick=async ()=>{
+          if(framesDecoded.length===0){ alert('没有帧'); return; }
+          // 计算 spritesheet 尺寸（垂直堆叠）
+          const maxW = Math.max(...framesDecoded.map(f=>f.width));
+          const totalH = framesDecoded.reduce((s,f)=>s+f.height,0);
+          const sheet = document.createElement('canvas');
+          sheet.width = maxW;
+          sheet.height = totalH;
+          const sctx = sheet.getContext('2d');
+          sctx.clearRect(0,0,sheet.width,sheet.height);
+          // 绘制每帧并记录元数据
+          const framesMeta = [];
+          let yOffset = 0;
+          for(let i=0;i<framesDecoded.length;i++){
+            const fr = framesDecoded[i];
+            const tmp = document.createElement('canvas');
+            tmp.width = fr.width; tmp.height = fr.height;
+            tmp.getContext('2d').putImageData(new ImageData(fr.img, fr.width, fr.height), 0, 0);
+            sctx.drawImage(tmp, 0, yOffset);
+            const xpivot = Math.floor(fr.width/2);
+            const ypivot = Math.floor(fr.height/2);
+            framesMeta.push({
+              xcrop: 0,
+              ycrop: yOffset,
+              width: fr.width,
+              height: fr.height,
+              xpivot: xpivot,
+              ypivot: ypivot,
+              delay: 1, // 最小 Delay
+              visible: true
+            });
+            yOffset += fr.height;
+          }
+          // 导出 spritesheet PNG（命名：animationName_spritesheet.png）
+          const sheetName = `${parsed.name}_spritesheet.png`;
+          sheet.toBlob(b=>{
+            const a=document.createElement('a');
+            a.href=URL.createObjectURL(b);
+            a.download=sheetName;
+            a.click();
+            setTimeout(()=>URL.revokeObjectURL(a.href),60000);
+          },'image/png');
+
+          // 生成 anm2 XML，Info Version=1，Spritesheet Path 使用 sheetName
+          const xml = generateAnm2XML(parsed.name, sheetName, framesMeta);
+          const blob=new Blob([xml],{type:'application/xml'});
+          const a=document.createElement('a');
+          a.href=URL.createObjectURL(blob);
+          a.download=`${parsed.name}.anm2`;
+          a.click();
+          setTimeout(()=>URL.revokeObjectURL(a.href),60000);
+        };
+        actions.appendChild(saveAnm2Btn);
+
+        meta.textContent = `帧数: ${framesDecoded.length}，首帧尺寸: ${framesDecoded[0]?.width||0} × ${framesDecoded[0]?.height||0}`;
+      }
+    }catch(err){
+      const errDiv=document.createElement('div'); errDiv.className='error'; errDiv.textContent='解析失败: '+(err?.message||String(err));
+      card.appendChild(errDiv);
+    }
+  }
+});
+</script>
+</body>
+</html>
